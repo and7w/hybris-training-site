@@ -1,0 +1,18 @@
+# Macros / Replacement Parameter definitions
+$productCatalog = apparelProductCatalog
+$productCatalogName = Apparel Product Catalog
+$catalogVersion = catalogversion(catalog(id[default=$productCatalog]), version[default='Staged'])[unique=true, default=$productCatalog:Staged]
+$baseProduct = baseProduct(code, catalogVersion(catalog(id[default='$productCatalog']), version[default='Staged']))
+$approved = approvalstatus(code)[default='approved']
+$taxGroup = Europe1PriceFactory_PTG(code)[default=eu-vat-full]
+
+
+
+# Create products
+INSERT_UPDATE ApparelProduct; code[unique = true]; $catalogVersion; webLabel[lang = en]; weight
+                            ; 300441142          ;                ; weblabel3          ; 4.6
+                            ; 29531              ;                ; weblabel2          ; 3.7
+                            ; 29532              ;                ; weblabel5          ; 0.2
+                            ; 29533              ;                ; weblabel4          ; 1.5
+                            ; 30404              ;                ; weblabel0          ; 2.4
+                            ; 300047513          ;                ; weblabel7          ; 4.1

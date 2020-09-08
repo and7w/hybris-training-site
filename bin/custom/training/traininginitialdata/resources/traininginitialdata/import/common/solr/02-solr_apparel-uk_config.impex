@@ -1,0 +1,104 @@
+# -----------------------------------------------------------------------
+# [y] hybris Platform
+#
+# Copyright (c) 2018 SAP SE or an SAP affiliate company.  All rights reserved.
+#
+# This software is the confidential and proprietary information of SAP
+# ("Confidential Information"). You shall not disclose such Confidential
+# Information and shall use it only in accordance with the terms of the
+# license agreement you entered into with SAP.
+# -----------------------------------------------------------------------
+#
+# Import the Solr configuration for the Apparel UK store
+#
+$productCatalog = apparelProductCatalog
+$catalogVersions = catalogVersions(catalog(id), version);
+$facetSearchConfigName = apparel-ukIndex
+$facetSearchConfigDescription = Apparel UK Solr Index
+$searchIndexNamePrefix = apparel-uk
+$solrIndexedType = apparel-ukProductType
+$indexBaseSite = apparel-uk
+$indexLanguages = en
+$indexCurrencies = GBP
+
+
+
+
+#
+# Setup the indexed types, their properties, and the update queries
+#
+
+# Declare the indexed type Product
+#Definir le ou les (types indexés)
+INSERT_UPDATE SolrIndexedType; identifier[unique = true]; type(code); variant; sorts(&sortRefID)
+                             ; $solrIndexedType         ; Product   ; false  ; sortRef1,sortRef2,sortRef3,sortRef4,sortRef5,sortRef6
+
+#preciser les index, les associer à serveur solr et aux catalogues
+INSERT_UPDATE SolrFacetSearchConfig; name[unique = true]    ; description                   ; indexNamePrefix        ; languages(isocode); currencies(isocode); solrServerConfig(name); solrSearchConfig(description); solrIndexConfig(name); solrIndexedTypes(identifier); enabledLanguageFallbackMechanism; $catalogVersions
+                                   ; $facetSearchConfigName ; $facetSearchConfigDescription ; $searchIndexNamePrefix ; $indexLanguages   ; $indexCurrencies   ; Default               ; Default                      ; Default              ; $solrIndexedType            ; true                            ; $productCatalog:Online,$productCatalog:Staged
+
+#lier  aux base site
+UPDATE BaseSite; uid[unique = true]; solrFacetSearchConfiguration(name)
+               ; $indexBaseSite    ; $facetSearchConfigName
+
+
+# Create the queries that will be used to extract data for Solr
+INSERT_UPDATE SolrIndexerQuery; solrIndexedType(identifier)[unique = true]; identifier[unique = true]          ; type(code); injectCurrentDate[default = true]; injectCurrentTime[default = true]; injectLastIndexTime[default = true]; query                                                             ; user(uid)
+                              ; $solrIndexedType                          ; $searchIndexNamePrefix-fullQuery   ; full      ;                                  ;                                  ; false                              ; "SELECT {p:PK} FROM {Product AS p} WHERE {p:varianttype} IS NULL" ; anonymous
+                              ; $solrIndexedType                          ; $searchIndexNamePrefix-updateQuery ; update    ;                                  ;                                  ;                                    ; "
+SELECT DISTINCT tbl.pk, tbl.code FROM (
+	{{
+		SELECT DISTINCT {p:PK} AS pk, {p:code} AS code
+		FROM {Product AS p LEFT JOIN CustomerReview AS cr ON {cr:product}={p:PK} }
+		WHERE {p:varianttype} IS NULL AND ({p:modifiedtime} >= ?lastIndexTime OR {cr:modifiedtime} >= ?lastIndexTime)
+	}}
+	UNION
+	{{
+		SELECT DISTINCT {p:PK} AS pk, {p:code} AS code
+		FROM {VariantProduct AS p JOIN Product AS bp1 ON {p:baseProduct}={bp1:PK} LEFT JOIN CustomerReview AS cr ON {cr:product}={bp1:PK} }
+		WHERE {p:varianttype} IS NULL AND ({bp1:modifiedtime} >= ?lastIndexTime OR {cr:modifiedtime} >= ?lastIndexTime)
+	}}
+	UNION
+	{{
+		SELECT DISTINCT {p:PK} AS pk, {p:code} AS code
+		FROM {VariantProduct AS p JOIN VariantProduct AS bp1 ON {p:baseProduct}={bp1:PK} JOIN Product AS bp2 ON {bp1:baseProduct}={bp2:PK} LEFT JOIN CustomerReview AS cr ON {cr:product}={bp2:PK} }
+		WHERE {p:varianttype} IS NULL AND ({bp2:modifiedtime} >= ?lastIndexTime OR {cr:modifiedtime} >= ?lastIndexTime)
+	}}
+	UNION
+	{{
+		SELECT {p:PK}  AS pk, {p:code} AS code FROM {Product AS p} WHERE {p:code} IN (
+			{{
+				SELECT DISTINCT {sl:productCode} FROM {StockLevel AS sl} WHERE {sl:modifiedtime} >= ?lastIndexTime
+			}}
+		)
+	}}
+) tbl ORDER BY tbl.code
+"                                                                 ; anonymous
+
+
+# Create the queries that will be used to extract data for Solr
+INSERT_UPDATE SolrIndexerQuery; solrIndexedType(identifier)[unique = true]; identifier[unique = true]     ; type(code); injectCurrentDate[default = true]; injectCurrentTime[default = true]; injectLastIndexTime[default = true]; query                                                             ; user(uid)
+                              ; $solrIndexedType                          ; $searchIndexNamePrefix-Delete ; delete    ;                                  ;                                  ; false                              ; "SELECT {p:PK} FROM {Product AS p} WHERE {p:varianttype} IS NULL" ; anonymous
+
+
+
+# Define the available sorts
+INSERT_UPDATE SolrSort; &sortRefID; indexedType(identifier)[unique = true]; code[unique = true]; useBoost
+                      ; sortRef1  ; $solrIndexedType                      ; relevance          ; true
+                      ; sortRef2  ; $solrIndexedType                      ; topRated           ; false
+                      ; sortRef3  ; $solrIndexedType                      ; name-asc           ; false
+                      ; sortRef4  ; $solrIndexedType                      ; name-desc          ; false
+                      ; sortRef5  ; $solrIndexedType                      ; price-asc          ; false
+                      ; sortRef6  ; $solrIndexedType                      ; price-desc         ; false
+
+
+# Define the sort fields
+INSERT_UPDATE SolrSortField; sort(indexedType(identifier), code)[unique = true]; fieldName[unique = true]; ascending[unique = true]
+                           ; $solrIndexedType:relevance                        ; inStockFlag             ; false
+                           ; $solrIndexedType:relevance                        ; score                   ; false
+                           ; $solrIndexedType:topRated                         ; inStockFlag             ; false
+                           ; $solrIndexedType:topRated                         ; reviewAvgRating         ; false
+                           ; $solrIndexedType:name-asc                         ; name                    ; true
+                           ; $solrIndexedType:name-desc                        ; name                    ; false
+                           ; $solrIndexedType:price-asc                        ; priceValue              ; true
+                           ; $solrIndexedType:price-desc                       ; priceValue              ; false
